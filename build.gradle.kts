@@ -23,6 +23,14 @@ dependencies {
     implementation(ktorLibs.server.netty)
     implementation(libs.logback.classic)
 
+    // 1. JetBrains Exposed ORM
+    implementation("org.jetbrains.exposed:exposed-core:0.53.0")
+    implementation("org.jetbrains.exposed:exposed-dao:0.53.0")
+    implementation("org.jetbrains.exposed:exposed-jdbc:0.53.0")
+
+    // 2. Driver Database SQLite
+    implementation("org.xerial:sqlite-jdbc:3.45.1.0")
+
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)
 }
