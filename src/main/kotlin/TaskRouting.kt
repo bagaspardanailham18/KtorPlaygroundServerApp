@@ -1,8 +1,12 @@
 package com.bagaspardanailham.bpiktorplayground
 
 import com.bagaspardanailham.bpiktorplayground.data.TaskTable
+import com.bagaspardanailham.bpiktorplayground.data.UserTable
 import com.bagaspardanailham.bpiktorplayground.model.Task
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.auth.authenticate
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.principal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -12,6 +16,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
@@ -20,109 +25,144 @@ import org.jetbrains.exposed.sql.update
 
 fun Route.taskRouting() {
     // Semua endpoint di dalam blok ini otomatis diawali dengan /tasks
-    route("/tasks") {
-        get {
-            val tasks = transaction {
-                TaskTable.selectAll().map {
-                    Task(
-                        id = it[TaskTable.id],
-                        title = it[TaskTable.title],
-                        isCompleted = it[TaskTable.isCompleted]
-                    )
-                }
-            }
-            call.respond(tasks)
-        }
-        get("/{id}") {
-            val id = call.parameters["id"]?.toIntOrNull()
-            if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("message" to "ID tidak valid"))
-                return@get
-            }
+    authenticate("auth-jwt") {
+        route("/tasks") {
+            get {
+                val principal = call.principal<JWTPrincipal>()
+                val loggedInUserId = getUserIdFromPrincipal(principal)
+                val username = principal?.payload?.getClaim("username")?.asString()
 
-            // Mencari data di database berdasarkan ID
-            val task = transaction {
-                TaskTable.selectAll()
-                    .where { TaskTable.id eq id }
-                    .map {
+                if (loggedInUserId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, mapOf("message" to "User tidak valid"))
+                    return@get
+                }
+
+                val tasks = transaction {
+                    TaskTable.selectAll().where { TaskTable.userId eq loggedInUserId }.map {
                         Task(
                             id = it[TaskTable.id],
                             title = it[TaskTable.title],
-                            isCompleted = it[TaskTable.isCompleted]
+                            isCompleted = it[TaskTable.isCompleted],
+                            userId = it[TaskTable.userId]
                         )
                     }
-                    .singleOrNull() // Mengambil satu data saja atau null jika tidak ada
-            }
-
-            if (task != null) {
-                call.respond(task)
-            } else {
-                call.respond(HttpStatusCode.NotFound, mapOf("message" to "Tugas tidak ditemukan"))
-            }
-        }
-        post {
-            try {
-                val inputTask = call.receive<Task>()
-                val insertedTask = transaction {
-                    val statement = TaskTable.insert {
-                        it[title] = inputTask.title
-                        it[isCompleted] = inputTask.isCompleted
-                    }
-                    Task(
-                        id = statement[TaskTable.id],
-                        title = inputTask.title,
-                        isCompleted = inputTask.isCompleted
-                    )
                 }
-                call.respond(HttpStatusCode.Created, insertedTask)
-            } catch (e: Exception) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Format JSON salah"))
+                call.respond(tasks)
             }
-        }
-        put("/{id}") {
-            val id = call.parameters["id"]?.toIntOrNull()
-            if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("message" to "ID tidak valid"))
-                return@put
-            }
+            get("/{id}") {
+                val id = call.parameters["id"]?.toIntOrNull()
+                val loggedInUserId = getUserIdFromPrincipal(call.principal<JWTPrincipal>())
 
-            try {
-                val updatedTaskInput = call.receive<Task>()
-
-                // Melakukan update di database dan mengembalikan jumlah baris yang terpengaruh
-                val rowsUpdated = transaction {
-                    TaskTable.update({ TaskTable.id eq id }) {
-                        it[title] = updatedTaskInput.title
-                        it[isCompleted] = updatedTaskInput.isCompleted
-                    }
+                if (id == null || loggedInUserId == null) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Permintaan tidak valid"))
+                    return@get
                 }
 
-                if (rowsUpdated > 0) {
-                    // Mengembalikan data yang sudah diperbarui beserta ID yang sesuai
-                    call.respond(HttpStatusCode.OK, updatedTaskInput.copy(id = id))
+                // Mencari data di database berdasarkan ID
+                val task = transaction {
+                    TaskTable.selectAll()
+                        .where { (TaskTable.id eq id) and (TaskTable.userId eq loggedInUserId) }
+                        .map {
+                            Task(
+                                id = it[TaskTable.id],
+                                title = it[TaskTable.title],
+                                isCompleted = it[TaskTable.isCompleted],
+                                userId = it[TaskTable.userId]
+                            )
+                        }
+                        .singleOrNull() // Mengambil satu data saja atau null jika tidak ada
+                }
+
+                if (task != null) {
+                    call.respond(task)
                 } else {
-                    call.respond(HttpStatusCode.NotFound, mapOf("message" to "Tugas tidak ditemukan"))
+                    call.respond(HttpStatusCode.NotFound, mapOf("message" to "Tugas tidak ditemukan atau bukan milik Anda"))
                 }
-            } catch (e: Exception) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Format JSON salah"))
+            }
+            post {
+                val loggedInUserId = getUserIdFromPrincipal(call.principal<JWTPrincipal>())
+                if (loggedInUserId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, mapOf("message" to "Sesi tidak valid"))
+                    return@post
+                }
+
+                try {
+                    val inputTask = call.receive<Task>()
+                    val insertedTask = transaction {
+                        val statement = TaskTable.insert {
+                            it[title] = inputTask.title
+                            it[isCompleted] = inputTask.isCompleted
+                            it[userId] = loggedInUserId
+                        }
+                        Task(
+                            id = statement[TaskTable.id],
+                            title = inputTask.title,
+                            isCompleted = inputTask.isCompleted,
+                            userId = loggedInUserId
+                        )
+                    }
+                    call.respond(HttpStatusCode.Created, insertedTask)
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Format JSON salah"))
+                }
+            }
+            put("/{id}") {
+                val id = call.parameters["id"]?.toIntOrNull()
+                val loggedInUserId = getUserIdFromPrincipal(call.principal<JWTPrincipal>())
+
+                if (id == null || loggedInUserId == null) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Permintaan tidak valid"))
+                    return@put
+                }
+
+                try {
+                    val updatedTaskInput = call.receive<Task>()
+
+                    // Melakukan update di database dan mengembalikan jumlah baris yang terpengaruh
+                    val rowsUpdated = transaction {
+                        TaskTable.update({ (TaskTable.id eq id) and (TaskTable.userId eq loggedInUserId) }) {
+                            it[title] = updatedTaskInput.title
+                            it[isCompleted] = updatedTaskInput.isCompleted
+                        }
+                    }
+
+                    if (rowsUpdated > 0) {
+                        call.respond(HttpStatusCode.OK, updatedTaskInput.copy(id = id, userId = loggedInUserId))
+                    } else {
+                        call.respond(HttpStatusCode.NotFound, mapOf("message" to "Tugas tidak ditemukan atau bukan milik Anda"))
+                    }
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Format JSON salah"))
+                }
+            }
+            delete("/{id}") {
+                val id = call.parameters["id"]?.toIntOrNull()
+                val loggedInUserId = getUserIdFromPrincipal(call.principal<JWTPrincipal>())
+
+                if (id == null || loggedInUserId == null) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Permintaan tidak valid"))
+                    return@delete
+                }
+
+                val rowsDeleted = transaction {
+                    TaskTable.deleteWhere { (TaskTable.id eq id) and (TaskTable.userId eq loggedInUserId) }
+                }
+
+                if (rowsDeleted > 0) {
+                    call.respond(HttpStatusCode.OK, mapOf("message" to "Tugas berhasil dihapus"))
+                } else {
+                    call.respond(HttpStatusCode.NotFound, mapOf("message" to "Tugas tidak ditemukan atau bukan milik Anda"))
+                }
             }
         }
-        delete("/{id}") {
-            val id = call.parameters["id"]?.toIntOrNull()
-            if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("message" to "ID tidak valid"))
-                return@delete
-            }
+    }
+}
 
-            val rowsDeleted = transaction {
-                TaskTable.deleteWhere { TaskTable.id eq id }
-            }
-
-            if (rowsDeleted > 0) {
-                call.respond(HttpStatusCode.OK, mapOf("message" to "Tugas berhasil dihapus"))
-            } else {
-                call.respond(HttpStatusCode.NotFound, mapOf("message" to "Tugas tidak ditemukan"))
-            }
-        }
+fun getUserIdFromPrincipal(principal: JWTPrincipal?): Int? {
+    val username = principal?.payload?.getClaim("username")?.asString() ?: return null
+    return transaction {
+        UserTable.selectAll().where { UserTable.username eq username }
+            .map { it[UserTable.id] }
+            .singleOrNull()
     }
 }

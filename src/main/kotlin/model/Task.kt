@@ -6,5 +6,6 @@ import kotlinx.serialization.Serializable
 data class Task(
     val id: Int? = null,
     val title: String,
-    val isCompleted: Boolean
+    val isCompleted: Boolean,
+    val userId: Int? = null
 )
