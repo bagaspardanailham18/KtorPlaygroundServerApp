@@ -1,0 +1,10 @@
+.gradle/
+build/
+.idea/
+
+tasks.db
+*.db
+*.db-journal
+
+*.iml
+*.log
