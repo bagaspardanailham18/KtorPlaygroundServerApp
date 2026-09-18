@@ -4,4 +4,5 @@ ktor:
   application:
     modules:
       - com.bagaspardanailham.bpiktorplayground.SerializationKt.configureSerialization
+      - com.bagaspardanailham.bpiktorplayground.SecurityKt.configureSecurity
       - com.bagaspardanailham.bpiktorplayground.RoutingKt.configureRouting

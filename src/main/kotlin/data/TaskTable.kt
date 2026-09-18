@@ -8,5 +8,7 @@ object TaskTable : Table("tasks") {
     val title = text("title")
     val isCompleted = bool("is_completed")
 
+    val userId = integer("user_id").references(UserTable.id)
+
     override val primaryKey = PrimaryKey(id)
 }
