@@ -32,3 +32,55 @@ jobs:
       # Langkah D: Jalankan proses kompilasi dan testing otomatis menggunakan Gradle
       - name: Build and Run Tests with Gradle
         run: ./gradlew build
+
+      # Langkah E: Build khusus untuk menghasilkan Fat JAR (Hanya berjalan saat PUSH ke main/master)
+      - name: Build Fat JAR
+        if: github.event_name == 'push'
+        run: ./gradlew buildFatJar --no-daemon
+          
+      # Langkah F: Set up QEMU & Docker Buildx untuk emulasi lintas arsitektur (Mac ke AWS Intel)
+      - name: Set up QEMU
+        if: github.event_name == 'push'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: github.event_name == 'push'
+        uses: docker/setup-buildx-action@v3
+
+      # Langkah G: Login ke Docker Hub kamu
+      - name: Login to Docker Hub
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Langkah H: Build & Push Image dengan arsitektur linux/amd64 (AWS)
+      - name: Build and Push Docker Image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: bagaspardanailham18/bpi-ktor-app:latest
+
+      # Langkah I: Masuk ke AWS via SSH secara otomatis dan perbarui kontainer Ktor di Port 8080
+      - name: Deploy to AWS via SSH
+        if: github.event_name == 'push'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 13.214.31.96
+          username: ec2-user
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+              docker stop ktor-playground || true
+              docker rm ktor-playground || true
+              docker rmi bagaspardanailham18/bpi-ktor-app:latest || true
+              docker run -d \
+                --name ktor-playground \
+                -p 8080:8080 \
+                --restart unless-stopped \
+                bagaspardanailham18/bpi-ktor-app:latest
+              docker image prune -f
