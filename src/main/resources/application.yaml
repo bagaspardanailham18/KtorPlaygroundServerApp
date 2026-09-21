@@ -5,4 +5,5 @@ ktor:
     modules:
       - com.bagaspardanailham.bpiktorplayground.SerializationKt.configureSerialization
       - com.bagaspardanailham.bpiktorplayground.SecurityKt.configureSecurity
+      - com.bagaspardanailham.bpiktorplayground.StatusPagesKt.configureStatusPages
       - com.bagaspardanailham.bpiktorplayground.RoutingKt.configureRouting

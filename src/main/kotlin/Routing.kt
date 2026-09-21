@@ -3,6 +3,7 @@ package com.bagaspardanailham.bpiktorplayground
 import com.bagaspardanailham.bpiktorplayground.data.TaskTable
 import com.bagaspardanailham.bpiktorplayground.data.UserTable
 import com.bagaspardanailham.bpiktorplayground.routing.authRouting
+import com.bagaspardanailham.bpiktorplayground.routing.taskRouting
 import io.ktor.server.application.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*

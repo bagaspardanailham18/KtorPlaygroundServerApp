@@ -36,6 +36,8 @@ dependencies {
 
     implementation("org.mindrot:jbcrypt:0.4")
 
+    implementation("io.ktor:ktor-server-status-pages")
+
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)
 }
